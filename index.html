@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude vs Deadline</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="terminal">
+
+  <div class="titlebar">
+    <div class="dots">
+      <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+    </div>
+    <div class="title">claude — claude-shooter</div>
+    <button id="mute-btn" title="som (M)">🔊</button>
+  </div>
+
+  <div class="hud">
+    <div class="hud-left">
+      <span class="prompt">&gt;</span> tokens: <span id="hud-tokens">0</span>
+      <span class="hud-sep">·</span> task <span id="hud-level">1</span>/∞
+    </div>
+    <div class="hud-center">
+      <div class="hud-label" id="hud-task-name">…</div>
+      <div class="bar"><div class="bar-fill task" id="hud-task-fill"></div></div>
+    </div>
+    <div class="hud-right">
+      <div class="hud-label">focus do claude</div>
+      <div class="bar"><div class="bar-fill focus" id="hud-focus-fill"></div></div>
+    </div>
+  </div>
+
+  <div class="screen-wrap">
+    <canvas id="game" width="900" height="600"></canvas>
+    <div class="scanlines"></div>
+
+    <div id="boss-bar" class="boss-bar hidden">
+      <div class="hud-label" id="boss-name">boss</div>
+      <div class="bar"><div class="bar-fill boss" id="boss-fill"></div></div>
+    </div>
+
+    <div id="powerup-chips" class="powerup-chips"></div>
+    <div id="banner" class="banner"></div>
+
+    <div id="screen-menu" class="overlay">
+      <pre class="ascii">
+ ██████ ██       █████  ██   ██ ██████  ███████
+██      ██      ██   ██ ██   ██ ██   ██ ██
+██      ██      ███████ ██   ██ ██   ██ █████
+██      ██      ██   ██ ██   ██ ██   ██ ██
+ ██████ ███████ ██   ██  █████  ██████  ███████</pre>
+      <pre class="ascii sub">─────────────  vs  D E A D L I N E  ─────────────</pre>
+      <p class="tagline">Você é um pequeno satélite. Proteja o Claude das distrações<br>corporativas até ele terminar a task.</p>
+      <div class="instructions">←→/AD mover · ↑↓/WS ajustar · ESPAÇO atirar · P pausar · M som</div>
+      <p class="blink-line">&gt; pressione ENTER para defender o deadline<span class="cursor">█</span></p>
+      <p class="hiscore" id="menu-hiscore"></p>
+    </div>
+
+    <div id="screen-pause" class="overlay hidden">
+      <p class="big">⏸ aguardando input do usuário…</p>
+      <p class="dim">(o deadline, infelizmente, não pausa)</p>
+      <p class="blink-line">&gt; pressione P para continuar<span class="cursor">█</span></p>
+    </div>
+
+    <div id="screen-gameover" class="overlay hidden">
+      <p class="big fail">✗ Context lost. Session terminated.</p>
+      <p id="gameover-quip" class="tagline"></p>
+      <pre id="gameover-stats" class="stats"></pre>
+      <p class="blink-line">&gt; pressione ENTER para tentar de novo<span class="cursor">█</span></p>
+    </div>
+  </div>
+
+  <div class="statusline">
+    <span id="claude-status"><span class="spark">✳</span> aguardando prompt…</span>
+    <span class="version">claude-shooter v1.0 · sem bugs conhecidos*</span>
+  </div>
+
+</div>
+<script src="js/audio.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>

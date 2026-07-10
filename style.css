@@ -1,0 +1,264 @@
+/* Claude vs Deadline — estética Claude Code */
+
+:root {
+  --bg: #12110f;
+  --panel: #262624;
+  --panel-2: #21201d;
+  --border: #3a3833;
+  --text: #faf9f5;
+  --dim: #8f8d86;
+  --orange: #d97757;
+  --green: #7fbf7f;
+  --red: #e05252;
+  --yellow: #e0b252;
+  --purple: #9b7ede;
+  --cyan: #6cb8c4;
+  --mono: "Cascadia Code", "Consolas", "Courier New", monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.terminal {
+  width: min(940px, 97vw);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+
+/* ── barra de título ── */
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #2f2e2b;
+  border-bottom: 1px solid var(--border);
+}
+.dots { display: flex; gap: 7px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; }
+.dot.red { background: #f2555a; }
+.dot.yellow { background: #f6bd3b; }
+.dot.green { background: #43c644; }
+.title { flex: 1; text-align: center; font-size: 12px; color: var(--dim); }
+#mute-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 1px 6px;
+  filter: grayscale(0.3);
+}
+#mute-btn:hover { border-color: var(--border); background: var(--panel); }
+
+/* ── HUD ── */
+.hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 14px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--dim);
+}
+.hud-left { white-space: nowrap; }
+.hud-left #hud-tokens { color: var(--orange); }
+.hud-left #hud-level { color: var(--text); }
+.prompt { color: var(--orange); }
+.hud-sep { margin: 0 6px; opacity: 0.5; }
+.hud-center { flex: 1; min-width: 0; }
+.hud-right { width: 190px; }
+.hud-label {
+  font-size: 11px;
+  margin-bottom: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bar {
+  height: 9px;
+  background: #3a3833;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 4px;
+  transition: width 0.15s linear, background-color 0.3s;
+}
+.bar-fill.task { background: var(--orange); }
+.bar-fill.focus { background: var(--green); }
+.bar-fill.focus.warn { background: var(--yellow); }
+.bar-fill.focus.danger { background: var(--red); }
+.bar-fill.boss { background: var(--red); }
+
+/* ── área do jogo ── */
+.screen-wrap { position: relative; font-size: 0; background: #1e1d1a; }
+canvas#game { display: block; width: 100%; height: auto; }
+
+.scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.13) 0px,
+    rgba(0, 0, 0, 0.13) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 0.5;
+  z-index: 2;
+  animation: flicker 3.2s infinite;
+}
+@keyframes flicker {
+  0%, 100% { opacity: 0.5; }
+  46% { opacity: 0.42; }
+  92% { opacity: 0.56; }
+}
+
+/* vinheta CRT */
+.screen-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.4) 100%);
+}
+
+/* ── barra do boss ── */
+.boss-bar {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 340px;
+  z-index: 3;
+  font-size: 11px;
+  color: var(--red);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+/* ── chips de power-up ── */
+.powerup-chips {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 3;
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+}
+.chip {
+  padding: 3px 8px;
+  border: 1px solid var(--c, var(--dim));
+  color: var(--c, var(--dim));
+  border-radius: 20px;
+  background: rgba(20, 19, 17, 0.75);
+}
+
+/* ── banner de eventos ── */
+.banner {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  z-index: 3;
+  padding: 8px 18px;
+  font-size: 13px;
+  color: var(--green);
+  background: rgba(20, 19, 17, 0.92);
+  border: 1px solid var(--green);
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.25s, transform 0.25s;
+  pointer-events: none;
+  max-width: 85%;
+  text-align: center;
+}
+.banner.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.banner.alert { color: var(--red); border-color: var(--red); }
+
+/* ── overlays (menu / pausa / game over) ── */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(18, 17, 15, 0.9);
+  font-size: 14px;
+  text-align: center;
+  padding: 20px;
+}
+.hidden { display: none !important; }
+
+.ascii {
+  color: var(--orange);
+  font-size: 11px;
+  line-height: 1.15;
+  text-shadow: 0 0 14px rgba(217, 119, 87, 0.45);
+}
+.ascii.sub { color: var(--red); font-size: 12px; letter-spacing: 1px; }
+
+.tagline { color: var(--dim); font-size: 13px; line-height: 1.5; }
+.instructions {
+  font-size: 12px;
+  color: var(--dim);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 14px;
+  background: var(--panel-2);
+}
+.blink-line { color: var(--text); font-size: 13px; }
+.big { font-size: 20px; }
+.big.fail { color: var(--red); text-shadow: 0 0 16px rgba(224, 82, 82, 0.4); }
+.dim { color: var(--dim); font-size: 12px; }
+.hiscore { color: var(--yellow); font-size: 12px; }
+.stats {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: left;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 18px;
+}
+
+.cursor { animation: blink 1s steps(1) infinite; color: var(--orange); }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ── linha de status ── */
+.statusline {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 14px;
+  background: var(--panel-2);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--dim);
+}
+.spark { color: var(--orange); display: inline-block; }
+.version { opacity: 0.6; white-space: nowrap; }
