@@ -90,14 +90,18 @@ class Player {
     this.moving = !!(dx || dy);
     this.tilt += (dx * 0.13 - this.tilt) * 10 * dt;
     if (dx && dy) { dx *= 0.707; dy *= 0.707; }
-    this.x = clamp(this.x + dx * this.speed * dt, 30, game.W - 30);
-    this.y = clamp(this.y + dy * this.speed * dt, game.H * 0.45, game.H - 105);
+    const speed = this.speed * (1 + 0.15 * (game.upgrades.ultrawide || 0));
+    this.x = clamp(this.x + dx * speed * dt, 30, game.W - 30);
+    this.y = clamp(this.y + dy * speed * dt, game.H * 0.45, game.H - 105);
 
     this.cooldown -= dt;
     this.muzzle -= dt;
     if (input.fire && this.cooldown <= 0) {
-      game.bullets.push(new Bullet(this.x, this.y - 20));
-      this.cooldown = game.power.coffee > 0 ? 0.1 : 0.21;
+      const pair = game.upgrades.pair || 0;
+      const offsets = pair === 0 ? [0] : pair === 1 ? [-7, 7] : [-12, 0, 12];
+      for (const off of offsets) game.bullets.push(new Bullet(this.x + off, this.y - 20));
+      const base = game.power.coffee > 0 ? 0.1 : 0.21;
+      this.cooldown = base / (1 + 0.15 * (game.upgrades.cicd || 0));
       this.muzzle = 0.06;
       AudioSys.play("shoot");
     }
@@ -170,7 +174,9 @@ class EnemyBullet {
   update(dt, game) {
     this.x += this.vx * dt;
     this.y += this.vy * dt;
-    if (this.x < -20 || this.x > game.W + 20 || this.y < -30) this.dead = true;
+    if (this.x < -20 || this.x > game.W + 20 || this.y < -30 || this.y > game.H + 20) {
+      this.dead = true;
+    }
   }
   draw(ctx) {
     ctx.save();
@@ -486,11 +492,17 @@ class Boss {
     }
     this.x += (this.moveTarget - this.x) * 2.2 * dt;
 
+    // rajadas miradas no jogador; quanto menos HP, mais raiva
     this.atkTimer -= dt;
     if (this.atkTimer <= 0) {
-      this.atkTimer = Math.max(1.2, 2.1 - this.level * 0.07);
-      for (const a of [-0.35, 0, 0.35]) {
-        game.enemyBullets.push(new EnemyBullet(this.x, this.y + 35, Math.sin(a) * 170, Math.cos(a) * 190));
+      const rage = 1 - this.hp / this.maxHp; // 0..1
+      this.atkTimer = Math.max(1.0, 2.4 - this.level * 0.07 - rage * 0.9);
+      const count = 1 + Math.floor(rage * 3) + (Math.random() < 0.3 ? 1 : 0);
+      const base = Math.atan2(game.player.y - this.y, game.player.x - this.x);
+      const speed = 200 + rage * 60;
+      for (let i = 0; i < count; i++) {
+        const a = base + (i - (count - 1) / 2) * 0.16;
+        game.enemyBullets.push(new EnemyBullet(this.x, this.y + 30, Math.cos(a) * speed, Math.sin(a) * speed));
       }
     }
 
@@ -654,6 +666,37 @@ class Ring {
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class Confetti {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.vx = rand(-90, 90);
+    this.vy = rand(-260, -140);
+    this.rot = rand(0, Math.PI * 2);
+    this.spin = rand(-8, 8);
+    this.size = rand(3, 5.5);
+    this.color = pick([COLORS.orange, COLORS.green, COLORS.purple, COLORS.cyan, COLORS.yellow, COLORS.red]);
+    this.life = rand(1.6, 2.4);
+    this.dead = false;
+  }
+  update(dt) {
+    this.vy += 300 * dt; // gravidade
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.rot += this.spin * dt;
+    this.life -= dt;
+    if (this.life <= 0) this.dead = true;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.globalAlpha = clamp(this.life / 0.5, 0, 1);
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.fillStyle = this.color;
+    ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size * 0.6);
     ctx.restore();
   }
 }

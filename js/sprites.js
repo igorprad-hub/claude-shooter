@@ -189,6 +189,16 @@ const SPRITE_ROWS = {
     "....YY....",
     "....Y.....",
   ],
+  duck: [
+    "....YYY...",
+    "...YYYYY..",
+    "...YKYYY..",
+    "...YYYYOO.",
+    "Y..YYYY...",
+    "YYYYYYYY..",
+    ".YYYYYYY..",
+    "..YYYYY...",
+  ],
 
   // bosses
   pm: [
@@ -253,6 +263,7 @@ const SPRITES = {
   focus: makeSprite(SPRITE_ROWS.focus, 2),
   dnd: makeSprite(SPRITE_ROWS.dnd, 2),
   pizza: makeSprite(SPRITE_ROWS.pizza, 2),
+  duck: makeSprite(SPRITE_ROWS.duck, 2),
   pm: makeSprite(SPRITE_ROWS.pm, 4),
   client: makeSprite(SPRITE_ROWS.client, 4),
   build: makeSprite(SPRITE_ROWS.build, 4),

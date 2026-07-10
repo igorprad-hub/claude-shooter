@@ -23,6 +23,12 @@
     overQuip: $("gameover-quip"),
     overStats: $("gameover-stats"),
     banner: $("banner"),
+    upgrade: $("screen-upgrade"),
+    upgradeCards: $("upgrade-cards"),
+    victory: $("screen-victory"),
+    victoryCommit: $("victory-commit"),
+    victoryTokens: $("victory-tokens"),
+    victorySkip: $("victory-skip"),
     status: $("claude-status"),
     menuHi: $("menu-hiscore"),
     muteBtn: $("mute-btn"),
@@ -81,14 +87,34 @@
 
   const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+  /* ── upgrades roguelite ("code review" entre tasks) ── */
+
+  const UPGRADES = [
+    { id: "pair", name: "pair programming", desc: "+1 tiro paralelo. Duas cabeças, o dobro de rajadas.", max: 2 },
+    { id: "cicd", name: "pipeline CI/CD", desc: "Cadência de tiro +15%. Deploy contínuo de projéteis.", max: 3 },
+    { id: "ultrawide", name: "monitor ultrawide", desc: "Velocidade do satélite +15%. Você vê tudo chegando.", max: 2 },
+    { id: "types", name: "type safety", desc: "+20 de focus máximo (e cura 20). Menos surpresas em runtime.", max: 2 },
+    { id: "tests", name: "unit tests", desc: "15% de chance de crítico (dano x2). Cobertura subindo.", max: 2 },
+    { id: "duck", name: "rubber duck", desc: "Patinho orbital destrói projéteis inimigos. Explique o bug pra ele.", max: 1 },
+    { id: "intern", name: "estagiário motivado", desc: "+4% de chance de drop de power-up. Ele traz café pra todos.", max: 2 },
+    { id: "anc", name: "noise cancelling", desc: "Inimigos 8% mais lentos. O open office desaparece.", max: 2 },
+    { id: "backlog", name: "backlog limpo", desc: "Quick questions param de se dividir. Priorização impecável.", max: 1 },
+    { id: "pizza", name: "pizza call", desc: "+30 de focus agora. Reunião boa é reunião com pizza.", max: Infinity },
+  ];
+
   /* ── estado ── */
 
   const game = {
     W, H,
-    mode: "menu", // menu | play | pause | over
+    mode: "menu", // menu | play | pause | over | upgrade | victory
+    victory: null,
     level: 1,
     tokens: 0,
     focus: 100,
+    maxFocus: 100,
+    upgrades: {},
+    offer: [],
+    t: 0,
     taskT: 0,
     taskDur: 40,
     phase: "task", // task | boss
@@ -150,6 +176,14 @@
     if (e.code === "Enter" && (game.mode === "menu" || game.mode === "over")) {
       startGame();
     }
+    if (game.mode === "upgrade") {
+      const m = e.code.match(/^(?:Digit|Numpad)([1-3])$/);
+      if (m) chooseUpgrade(+m[1] - 1);
+    }
+    if (game.mode === "victory" && game.victory && game.victory.t > 1.6 &&
+        !e.repeat && (e.code === "Enter" || e.code === "Space")) {
+      endVictory();
+    }
     if ((e.code === "KeyP" || e.code === "Escape") && (game.mode === "play" || game.mode === "pause")) {
       togglePause();
     }
@@ -181,6 +215,12 @@
     game.level = 1;
     game.tokens = 0;
     game.focus = 100;
+    game.maxFocus = 100;
+    game.upgrades = {};
+    game.offer = [];
+    game.t = 0;
+    game.victory = null;
+    ui.victory.classList.add("hidden");
     game.tasksDone = 0;
     game.bullets = [];
     game.enemyBullets = [];
@@ -197,6 +237,7 @@
     ui.menu.classList.add("hidden");
     ui.over.classList.add("hidden");
     ui.pause.classList.add("hidden");
+    ui.upgrade.classList.add("hidden");
     ui.bossBar.classList.add("hidden");
   }
 
@@ -222,21 +263,174 @@
 
   function bossDefeated() {
     const b = game.boss;
-    for (let i = 0; i < 40; i++) game.particles.push(new Particle(b.x, b.y, b.cfg.color));
-    game.particles.push(new Ring(b.x, b.y, b.cfg.color, 95));
-    game.particles.push(new Ring(b.x, b.y, COLORS.text, 55));
-    game.tokens += 1000 + game.level * 250;
+    for (let i = 0; i < 25; i++) game.particles.push(new Particle(b.x, b.y, b.cfg.color));
+    const gained = 1000 + game.level * 250;
+    game.tokens += gained;
     game.tasksDone++;
     game.level++;
-    game.focus = Math.min(100, game.focus + 15); // café da vitória
-    game.boss = null;
+    game.focus = Math.min(game.maxFocus, game.focus + 15); // café da vitória
+
+    // onda de choque: limpa a tela (½ tokens por inimigo, sem drops)
+    let extra = 0;
+    for (const e of game.enemies) {
+      e.dead = true;
+      extra += Math.floor(e.cfg.tokens / 2);
+      for (let i = 0; i < 6; i++) game.particles.push(new Particle(e.x, e.y, e.cfg.color));
+      game.particles.push(new Ring(e.x, e.y, e.cfg.color, 20));
+    }
+    game.tokens += extra;
+    game.enemies = [];
     game.enemyBullets = [];
-    game.shake = Math.max(game.shake, 0.5);
-    showBanner(`✓ Task completed — git commit -m "${game.taskName}"`, 3);
+    game.shake = Math.max(game.shake, 0.4);
+
+    game.victory = {
+      t: 0,
+      x: b.x,
+      y: b.y,
+      cfg: b.cfg,
+      gained: gained + extra,
+      commit: `$ git commit -m "${game.taskName}"`,
+      boomed: false,
+      nextBurst: 0,
+    };
+    game.boss = null;
+    game.mode = "victory";
+    ui.bossBar.classList.add("hidden");
+    ui.victoryCommit.textContent = "";
+    ui.victoryTokens.textContent = "";
+    ui.victorySkip.classList.add("hidden");
     AudioSys.play("bossDown");
-    setTimeout(() => AudioSys.play("taskDone"), 400);
-    startTask();
   }
+
+  /* ── sequência de celebração ── */
+
+  function victoryUpdate(dt) {
+    const v = game.victory;
+    if (!v) return;
+    v.t += dt;
+    game.t += dt;
+
+    // só os efeitos continuam vivos; o jogo fica congelado
+    for (const pt of game.particles) pt.update(dt);
+    for (const f of game.floats) f.update(dt);
+    game.particles = game.particles.filter((o) => !o.dead);
+    game.floats = game.floats.filter((o) => !o.dead);
+    game.shake = Math.max(0, game.shake - dt * 1.6);
+    game.dmgFlash = Math.max(0, game.dmgFlash - dt);
+    if (game.bannerT > 0) {
+      game.bannerT -= dt;
+      if (game.bannerT <= 0) ui.banner.classList.remove("show");
+    }
+
+    // fase 1: explosões encadeadas no boss agonizante
+    if (!v.boomed && v.t < 1.0) {
+      v.nextBurst -= dt;
+      if (v.nextBurst <= 0) {
+        v.nextBurst = 0.12;
+        const ox = rand(-40, 40);
+        const oy = rand(-30, 30);
+        for (let i = 0; i < 8; i++) game.particles.push(new Particle(v.x + ox, v.y + oy, v.cfg.color));
+        game.particles.push(new Ring(v.x + ox, v.y + oy, v.cfg.color, rand(14, 26)));
+        game.shake = Math.max(game.shake, 0.15);
+        if (Math.random() < 0.5) AudioSys.play("explode");
+      }
+    }
+
+    // fase 2: boom final, confete e fanfarra
+    if (!v.boomed && v.t >= 1.0) {
+      v.boomed = true;
+      game.particles.push(new Ring(v.x, v.y, v.cfg.color, 110));
+      game.particles.push(new Ring(v.x, v.y, COLORS.text, 70));
+      game.particles.push(new Ring(v.x, v.y, COLORS.green, 40));
+      for (let i = 0; i < 30; i++) game.particles.push(new Particle(v.x, v.y, v.cfg.color));
+      for (let i = 0; i < 70; i++) {
+        game.particles.push(new Confetti(rand(60, W - 60), rand(H * 0.25, H * 0.6)));
+      }
+      game.shake = 0.7;
+      AudioSys.play("fanfare");
+      setTimeout(() => AudioSys.play("taskDone"), 350);
+      ui.victory.classList.remove("hidden");
+    }
+
+    // fase 3: commit digitado + contador de tokens
+    if (v.boomed) {
+      const tt = v.t - 1.2;
+      if (tt > 0) {
+        ui.victoryCommit.textContent = v.commit.slice(0, Math.floor(tt * 30));
+        const frac = clamp(tt / 1.6, 0, 1);
+        ui.victoryTokens.textContent = `+${fmt(Math.floor(v.gained * frac))} tokens`;
+      }
+      if (v.t > 2.2) ui.victorySkip.classList.remove("hidden");
+      if (v.t >= 4) endVictory();
+    }
+  }
+
+  function endVictory() {
+    if (!game.victory) return;
+    game.victory = null;
+    ui.victory.classList.add("hidden");
+    openUpgrades();
+  }
+
+  ui.victory.addEventListener("click", () => {
+    if (game.mode === "victory" && game.victory && game.victory.t > 1.6) endVictory();
+  });
+
+  /* ── menu de upgrades (code review) ── */
+
+  function openUpgrades() {
+    const pool = UPGRADES.filter((u) => (game.upgrades[u.id] || 0) < u.max);
+    const offer = [];
+    while (offer.length < 3 && pool.length) {
+      offer.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    if (!offer.length) {
+      startTask();
+      return;
+    }
+    game.offer = offer;
+    ui.upgradeCards.innerHTML = offer
+      .map((u, i) => {
+        const lvl = game.upgrades[u.id] || 0;
+        const lvlTxt = u.max === Infinity ? "repetível" : lvl > 0 ? `lvl ${lvl} → ${lvl + 1}` : "NOVO";
+        return (
+          `<button class="upgrade-card" data-i="${i}" style="animation-delay:${i * 0.12}s">` +
+          `<span class="key">[${i + 1}]</span>` +
+          `<span class="uname">${u.name}</span>` +
+          `<span class="udesc">${u.desc}</span>` +
+          `<span class="ulvl">${lvlTxt}</span>` +
+          `</button>`
+        );
+      })
+      .join("");
+    game.mode = "upgrade";
+    ui.bossBar.classList.add("hidden");
+    ui.upgrade.classList.remove("hidden");
+  }
+
+  function chooseUpgrade(i) {
+    if (game.mode !== "upgrade") return;
+    const u = game.offer[i];
+    if (!u) return;
+    game.upgrades[u.id] = (game.upgrades[u.id] || 0) + 1;
+    if (u.id === "types") {
+      game.maxFocus += 20;
+      game.focus = Math.min(game.maxFocus, game.focus + 20);
+    }
+    if (u.id === "pizza") {
+      game.focus = Math.min(game.maxFocus, game.focus + 30);
+    }
+    ui.upgrade.classList.add("hidden");
+    AudioSys.play("power");
+    game.mode = "play";
+    startTask();
+    showBanner(`✓ merged: ${u.name}`, 2);
+  }
+
+  ui.upgradeCards.addEventListener("click", (e) => {
+    const btn = e.target.closest(".upgrade-card");
+    if (btn) chooseUpgrade(+btn.dataset.i);
+  });
 
   function togglePause() {
     if (game.mode === "play") {
@@ -256,9 +450,17 @@
       localStorage.setItem("cvd_hiscore", String(game.hiscore));
     }
     ui.overQuip.textContent = pick(OVER_QUIPS);
+    const ups =
+      Object.entries(game.upgrades)
+        .map(([id, lv]) => {
+          const u = UPGRADES.find((x) => x.id === id);
+          return `${u ? u.name : id} ×${lv}`;
+        })
+        .join(", ") || "nenhuma";
     ui.overStats.textContent =
       `tokens processados ....... ${fmt(game.tokens)}\n` +
       `tasks completadas ........ ${game.tasksDone}\n` +
+      `melhorias mergeadas ...... ${ups}\n` +
       `high score ............... ${fmt(game.hiscore)}`;
     ui.over.classList.remove("hidden");
     ui.bossBar.classList.add("hidden");
@@ -347,15 +549,15 @@
     }
     AudioSys.play("explode");
 
-    // "quick question" se divide: only takes 5 min…
-    if (e.cfg.splits && !e.mini && !byShield) {
+    // "quick question" se divide: only takes 5 min… (backlog limpo previne)
+    if (e.cfg.splits && !e.mini && !byShield && !game.upgrades.backlog) {
       for (const off of [-16, 16]) {
         game.enemies.push(new Enemy("quick", e.x + off, e.y, game.level, { mini: true }));
       }
       AudioSys.play("split");
     }
     // drop de power-up (com focus baixo, a pizza fica mais provável)
-    if (!e.mini && Math.random() < 0.08) {
+    if (!e.mini && Math.random() < 0.08 + 0.04 * (game.upgrades.intern || 0)) {
       let type = pick(Object.keys(POWERUP_TYPES));
       if (game.focus <= 40 && Math.random() < 0.5) type = "pizza";
       game.powerups.push(new PowerUp(type, e.x, e.y));
@@ -365,6 +567,16 @@
   function collide() {
     const p = game.player;
 
+    // dano da bala, com chance de crítico dos unit tests
+    const critChance = 0.15 * (game.upgrades.tests || 0);
+    const rollDmg = (b) => {
+      if (critChance && Math.random() < critChance) {
+        game.floats.push(new FloatText(b.x, b.y - 8, "LGTM! x2", COLORS.orange));
+        return 2;
+      }
+      return 1;
+    };
+
     // balas do jogador × inimigos
     for (const b of game.bullets) {
       if (b.dead) continue;
@@ -372,7 +584,7 @@
         if (e.dead) continue;
         if (aabb(b, e)) {
           b.dead = true;
-          if (e.hit(1)) {
+          if (e.hit(rollDmg(b))) {
             killEnemy(e);
           } else {
             AudioSys.play("hit");
@@ -385,11 +597,24 @@
       const boss = game.boss;
       if (!b.dead && boss && !boss.entering && aabb(b, { x: boss.x, y: boss.y, w: boss.cfg.w, h: boss.cfg.h })) {
         b.dead = true;
-        if (boss.hit(1)) {
+        if (boss.hit(rollDmg(b))) {
           bossDefeated();
         } else {
           AudioSys.play("hit");
           for (let i = 0; i < 3; i++) game.particles.push(new Particle(b.x, b.y, COLORS.text));
+        }
+      }
+    }
+
+    // rubber duck orbital: bloqueia projéteis inimigos
+    if (game.upgrades.duck) {
+      const a = game.t * 2.5;
+      const dx = p.x + Math.cos(a) * 44;
+      const dy = p.y + Math.sin(a) * 44;
+      for (const b of game.enemyBullets) {
+        if (!b.dead && Math.hypot(b.x - dx, b.y - dy) < 17) {
+          b.dead = true;
+          for (let i = 0; i < 3; i++) game.particles.push(new Particle(b.x, b.y, COLORS.yellow));
         }
       }
     }
@@ -426,12 +651,8 @@
         b.dead = true;
         game.floats.push(new FloatText(p.x, p.y - 24, "distração!", COLORS.red));
         hitFocus(5);
-        continue;
       }
-      if (b.y > LEAK_Y) {
-        b.dead = true;
-        hitFocus(b.dmg);
-      }
+      // projéteis que passam direto somem no fundo sem dano (esquiva pura)
     }
 
     // power-ups × jogador
@@ -440,7 +661,7 @@
       if (aabb(pu, p)) {
         pu.dead = true;
         if (pu.cfg.heal) {
-          game.focus = Math.min(100, game.focus + pu.cfg.heal);
+          game.focus = Math.min(game.maxFocus, game.focus + pu.cfg.heal);
           game.floats.push(new FloatText(p.x, p.y - 28, `+${pu.cfg.heal} focus`, COLORS.green));
         } else {
           game.power[pu.type] = pu.cfg.dur;
@@ -454,8 +675,10 @@
   /* ── update ── */
 
   function update(dt) {
+    game.t += dt;
     const slowmo = game.power.focus > 0 ? 0.4 : 1; // focus mode: o mundo desacelera
     const edt = dt * slowmo;
+    const eSlow = 1 - 0.08 * (game.upgrades.anc || 0); // noise cancelling
 
     for (const k of Object.keys(game.power)) {
       game.power[k] = Math.max(0, game.power[k] - dt);
@@ -476,7 +699,7 @@
 
     for (const b of game.bullets) b.update(dt);
     for (const b of game.enemyBullets) b.update(edt, game);
-    for (const e of game.enemies) e.update(edt, game);
+    for (const e of game.enemies) e.update(edt * eSlow, game);
     for (const pu of game.powerups) pu.update(edt, game);
     for (const pt of game.particles) pt.update(dt);
     for (const f of game.floats) f.update(dt);
@@ -637,9 +860,22 @@
     for (const pu of game.powerups) pu.draw(ctx);
     for (const e of game.enemies) e.draw(ctx);
     if (game.boss) game.boss.draw(ctx);
+    // boss agonizante durante a celebração (pisca e treme até o boom)
+    if (game.victory && !game.victory.boomed) {
+      if (Math.sin(game.victory.t * 40) > -0.3) {
+        drawSprite(ctx, SPRITES[game.victory.cfg.id], game.victory.x + rand(-3, 3), game.victory.y - 8 + rand(-3, 3));
+      }
+    }
     for (const b of game.bullets) b.draw(ctx);
     for (const b of game.enemyBullets) b.draw(ctx);
-    if (game.player) game.player.draw(ctx, time);
+    if (game.player) {
+      game.player.draw(ctx, time);
+      // rubber duck orbital
+      if (game.upgrades.duck) {
+        const a = game.t * 2.5;
+        drawSprite(ctx, SPRITES.duck, game.player.x + Math.cos(a) * 44, game.player.y + Math.sin(a) * 44);
+      }
+    }
     for (const pt of game.particles) pt.draw(ctx);
     for (const f of game.floats) f.draw(ctx);
 
@@ -663,7 +899,10 @@
     ui.tokens.textContent = fmt(game.tokens);
     ui.level.textContent = String(game.level);
 
-    if (game.phase === "task") {
+    if (game.mode === "victory") {
+      ui.taskName.textContent = `✓ ${game.taskName}`;
+      ui.taskFill.style.width = "100%";
+    } else if (game.phase === "task") {
       ui.taskName.textContent = `${game.taskName}`;
       ui.taskFill.style.width = `${(game.taskT / game.taskDur) * 100}%`;
     } else if (game.boss) {
@@ -674,9 +913,10 @@
       ui.bossName.textContent = `${game.boss.cfg.barName} — ${Math.ceil(pct)}%`;
     }
 
-    ui.focusFill.style.width = `${game.focus}%`;
-    ui.focusFill.classList.toggle("warn", game.focus <= 50 && game.focus > 25);
-    ui.focusFill.classList.toggle("danger", game.focus <= 25);
+    const fr = game.focus / game.maxFocus;
+    ui.focusFill.style.width = `${fr * 100}%`;
+    ui.focusFill.classList.toggle("warn", fr <= 0.5 && fr > 0.25);
+    ui.focusFill.classList.toggle("danger", fr <= 0.25);
 
     // chips de power-up ativos
     let chips = "";
@@ -695,6 +935,8 @@
       status = `<span class="spark">✳</span> aguardando prompt…`;
     } else if (game.mode === "over") {
       status = `<span class="spark" style="color:${COLORS.red}">✗</span> sessão encerrada`;
+    } else if (game.mode === "victory") {
+      status = `<span class="spark" style="color:${COLORS.green}">✓</span> build verde — merge aprovado!`;
     } else if (game.phase === "boss" && game.boss) {
       status = `<span class="spark">${spin}</span> ${game.boss.cfg.name} bloqueando o merge…`;
     } else {
@@ -717,6 +959,7 @@
     const time = now / 1000;
 
     if (game.mode === "play") update(dt);
+    else if (game.mode === "victory") victoryUpdate(dt);
     render(dt, time); // fundo continua vivo no menu/pausa (ambiente)
     updateHud(time);
 

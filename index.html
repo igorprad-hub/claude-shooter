@@ -64,6 +64,20 @@
       <p class="blink-line">&gt; pressione P para continuar<span class="cursor">█</span></p>
     </div>
 
+    <div id="screen-victory" class="overlay clear hidden">
+      <p class="big ok pop" id="victory-title">✓ task concluída</p>
+      <p class="commit-line"><span id="victory-commit"></span><span class="cursor">█</span></p>
+      <p class="victory-tokens" id="victory-tokens"></p>
+      <p class="dim hidden" id="victory-skip">&gt; pressione ENTER para o code review</p>
+    </div>
+
+    <div id="screen-upgrade" class="overlay hidden">
+      <p class="big ok">✓ task concluída — code review</p>
+      <p class="dim">$ escolha 1 melhoria para o merge:</p>
+      <div id="upgrade-cards" class="upgrade-cards"></div>
+      <p class="dim">pressione 1, 2 ou 3 — ou clique</p>
+    </div>
+
     <div id="screen-gameover" class="overlay hidden">
       <p class="big fail">✗ Context lost. Session terminated.</p>
       <p id="gameover-quip" class="tagline"></p>

@@ -52,6 +52,11 @@ const AudioSys = (() => {
     power()       { [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.09, { vol: 0.08, delay: i * 0.06 })); },
     focusHit()    { tone(110, 0.28, { type: "sawtooth", vol: 0.15, slideTo: 55 }); noise(0.12, 0.07); },
     taskDone()    { [523, 659, 784].forEach((f, i) => tone(f, 0.15, { type: "triangle", vol: 0.11, delay: i * 0.13 })); },
+    fanfare() {
+      [392, 523, 659, 784].forEach((f, i) => tone(f, 0.12, { type: "triangle", vol: 0.1, delay: i * 0.09 }));
+      tone(1046, 0.35, { type: "triangle", vol: 0.11, delay: 0.36 });
+      tone(784, 0.35, { type: "triangle", vol: 0.08, delay: 0.36 });
+    },
     boss()        { [200, 150, 200, 150].forEach((f, i) => tone(f, 0.16, { vol: 0.1, delay: i * 0.18 })); },
     bossDown()    { noise(0.5, 0.16); [420, 300, 210, 120].forEach((f, i) => tone(f, 0.18, { type: "sawtooth", vol: 0.09, delay: i * 0.1 })); },
     scopeChange() { tone(700, 0.3, { type: "sawtooth", vol: 0.1, slideTo: 180 }); },
