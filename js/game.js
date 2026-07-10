@@ -354,9 +354,10 @@
       }
       AudioSys.play("split");
     }
-    // drop de power-up
+    // drop de power-up (com focus baixo, a pizza fica mais provável)
     if (!e.mini && Math.random() < 0.08) {
-      const type = pick(Object.keys(POWERUP_TYPES));
+      let type = pick(Object.keys(POWERUP_TYPES));
+      if (game.focus <= 40 && Math.random() < 0.5) type = "pizza";
       game.powerups.push(new PowerUp(type, e.x, e.y));
     }
   }
@@ -438,8 +439,13 @@
       if (pu.dead) continue;
       if (aabb(pu, p)) {
         pu.dead = true;
-        game.power[pu.type] = pu.cfg.dur;
-        game.floats.push(new FloatText(p.x, p.y - 28, `${pu.cfg.emoji} ${pu.cfg.label}!`, pu.cfg.color));
+        if (pu.cfg.heal) {
+          game.focus = Math.min(100, game.focus + pu.cfg.heal);
+          game.floats.push(new FloatText(p.x, p.y - 28, `+${pu.cfg.heal} focus`, COLORS.green));
+        } else {
+          game.power[pu.type] = pu.cfg.dur;
+          game.floats.push(new FloatText(p.x, p.y - 28, `${pu.cfg.emoji} ${pu.cfg.label}!`, pu.cfg.color));
+        }
         AudioSys.play("power");
       }
     }

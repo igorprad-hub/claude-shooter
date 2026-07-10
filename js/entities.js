@@ -330,6 +330,7 @@ const POWERUP_TYPES = {
   coffee: { emoji: "☕", label: "coffee", color: COLORS.yellow, dur: 10 },
   focus:  { emoji: "🎧", label: "focus mode", color: COLORS.purple, dur: 8 },
   dnd:    { emoji: "🌙", label: "do not disturb", color: COLORS.cyan, dur: 10 },
+  pizza:  { emoji: "🍕", label: "pizza do time", color: COLORS.green, heal: 20 },
 };
 
 class PowerUp {
@@ -369,7 +370,7 @@ const BOSS_TYPES = [
     barName: "stakeholders/pm",
     emoji: "🧑‍💼",
     sub: "product manager",
-    w: 130, h: 78,
+    w: 130, h: 90,
     color: COLORS.purple,
     phrases: [
       "só uma coisinha rapidinho",
@@ -385,7 +386,7 @@ const BOSS_TYPES = [
     barName: "clients/aquele-cliente",
     emoji: "🤵",
     sub: "o cliente",
-    w: 130, h: 78,
+    w: 130, h: 90,
     color: COLORS.cyan,
     phrases: [
       "na verdade eu queria diferente",
@@ -401,7 +402,7 @@ const BOSS_TYPES = [
     barName: "ci/build — FAILED",
     emoji: "⛔",
     sub: "exit code 1",
-    w: 250, h: 60,
+    w: 220, h: 90,
     color: COLORS.red,
     phrases: [
       "Error: cannot find module 'motivação'",
@@ -540,25 +541,43 @@ class Boss {
       ctx.fillRect(this.telegraph.x - 16, y, 32, 600);
     }
 
-    // cartão do boss
-    ctx.fillStyle = "rgba(38, 38, 36, 0.95)";
-    roundRectPath(ctx, x - w / 2, y - h / 2, w, h, 10);
-    ctx.fill();
-    ctx.strokeStyle = this.flash > 0 ? COLORS.text : this.cfg.color;
-    ctx.lineWidth = 3;
+    // nave do boss (só o contorno): cúpula de vidro + disco
+    const bob = Math.sin(this.t * 2) * 3;
+    const cy = y + bob;
+    const strokeColor = this.flash > 0 ? COLORS.text : this.cfg.color;
+
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 2.5;
     ctx.shadowColor = this.cfg.color;
-    ctx.shadowBlur = 14;
+    ctx.shadowBlur = 12;
+    // cúpula com leve preenchimento de "vidro"
+    ctx.fillStyle = "rgba(38, 38, 36, 0.72)";
+    ctx.beginPath();
+    ctx.arc(x, cy - 8, 42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // disco/casco
+    ctx.beginPath();
+    ctx.ellipse(x, cy + 28, w / 2, 15, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.shadowBlur = 0;
+    // luzes do casco piscando em sequência
+    for (let i = -2; i <= 2; i++) {
+      const lx = x + i * (w / 5.4);
+      ctx.fillStyle =
+        (Math.floor(this.t * 5) % 5 + 5) % 5 === i + 2
+          ? COLORS.text
+          : this.cfg.color;
+      ctx.fillRect(lx - 2, cy + 26, 4, 4);
+    }
 
-    // sprite pixel-art com flutuação
-    const bob = Math.sin(this.t * 2) * 3;
-    drawSprite(ctx, SPRITES[this.cfg.id], x, y - 7 + bob);
+    // avatar dentro da cúpula
+    drawSprite(ctx, SPRITES[this.cfg.id], x, cy - 8);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = "10px monospace";
     ctx.fillStyle = COLORS.dim;
-    ctx.fillText(this.cfg.sub, x, y + h / 2 - 9);
+    ctx.fillText(this.cfg.sub, x, cy + 54);
 
     // balão de fala
     if (this.phrase && !this.entering) {

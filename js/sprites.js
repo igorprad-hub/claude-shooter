@@ -177,6 +177,18 @@ const SPRITE_ROWS = {
     "..CCCC....",
     "...CCCC...",
   ],
+  pizza: [
+    "yyyyyyyyyy",
+    "YYYYYYYYYY",
+    ".YYRYYRYY.",
+    ".YYYYYYYY.",
+    "..YYYYYY..",
+    "..YYRYYY..",
+    "...YYYY...",
+    "...YYY....",
+    "....YY....",
+    "....Y.....",
+  ],
 
   // bosses
   pm: [
@@ -240,6 +252,7 @@ const SPRITES = {
   coffee: makeSprite(SPRITE_ROWS.coffee, 2),
   focus: makeSprite(SPRITE_ROWS.focus, 2),
   dnd: makeSprite(SPRITE_ROWS.dnd, 2),
+  pizza: makeSprite(SPRITE_ROWS.pizza, 2),
   pm: makeSprite(SPRITE_ROWS.pm, 4),
   client: makeSprite(SPRITE_ROWS.client, 4),
   build: makeSprite(SPRITE_ROWS.build, 4),
