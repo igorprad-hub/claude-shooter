@@ -77,6 +77,8 @@ class Player {
     this.h = 26;
     this.x = W / 2;
     this.y = H - 130;
+    this.vx = 0;
+    this.vy = 0;
     this.speed = 340;
     this.cooldown = 0;
     this.tilt = 0;
@@ -91,8 +93,12 @@ class Player {
     this.tilt += (dx * 0.13 - this.tilt) * 10 * dt;
     if (dx && dy) { dx *= 0.707; dy *= 0.707; }
     const speed = this.speed * (1 + 0.15 * (game.upgrades.ultrawide || 0));
+    const px = this.x, py = this.y;
     this.x = clamp(this.x + dx * speed * dt, 30, game.W - 30);
     this.y = clamp(this.y + dy * speed * dt, game.H * 0.45, game.H - 105);
+    // velocidade efetiva (pós-clamp): encostado na parede é 0, não a intenção do input
+    this.vx = dt > 0 ? (this.x - px) / dt : 0;
+    this.vy = dt > 0 ? (this.y - py) / dt : 0;
 
     this.cooldown -= dt;
     this.muzzle -= dt;
@@ -212,6 +218,11 @@ const ENEMY_TYPES = {
   scope: {
     label: "scope changed", w: 132, h: 30, hp: 2, speed: 90, dmg: 8, tokens: 220,
     color: COLORS.cyan, move: "erratic", shape: "card",
+  },
+  // cuspido pelo build: ocupa o espaço pra onde você ia fugir da stack trace
+  error: {
+    label: "TypeError", w: 130, h: 30, hp: 3, speed: 75, dmg: 7, tokens: 90,
+    color: COLORS.red, move: "straight", shape: "card",
   },
 };
 
@@ -437,7 +448,9 @@ class Boss {
     this.phrase = "";
     this.moveTarget = this.x;
     this.thresholds = [0.75, 0.5, 0.25]; // cliente: pontos de "mudança de escopo"
-    this.telegraph = null;               // build: coluna telegrafada { x, t }
+    this.volley = null;                  // cliente: segundo leque do double-tap pendente
+    this.telegraph = null;               // build: coluna telegrafada { x, x2, t, fired }
+    this.opened = false;                 // build: abertura já cuspida?
     this.flash = 0;
     this.dead = false;
   }
@@ -447,7 +460,11 @@ class Boss {
     this.flash -= dt;
     if (this.entering) {
       this.y += 130 * dt;
-      if (this.y >= this.targetY) { this.y = this.targetY; this.entering = false; }
+      if (this.y >= this.targetY) {
+        this.y = this.targetY;
+        this.entering = false;
+        this.t = 0; // t é fase, não tempo de vida: sem zerar, x salta ao fim da descida
+      }
       return;
     }
 
@@ -483,6 +500,23 @@ class Boss {
     }
   }
 
+  // leque mirado com antecipação; o lead nunca chega a 1, então mudar de direção sempre desvia
+  fireFan(game, rage, stage) {
+    const count = stage === 0 ? 3 : 5;
+    const speed = 260 + rage * 110;
+    const lead = 0.25 + rage * 0.35;
+    const p = game.player;
+    const oy = this.y + 30;
+    const t = Math.hypot(p.x - this.x, p.y - oy) / speed; // tempo de voo estimado
+    const aimX = p.x + p.vx * t * lead;
+    const base = Math.atan2(p.y - oy, aimX - this.x);
+    for (let i = 0; i < count; i++) {
+      // passo 0.20: ~66px entre balas na altura do jogador, mais que o hitbox de 56
+      const a = base + (i - (count - 1) / 2) * 0.2;
+      game.enemyBullets.push(new EnemyBullet(this.x, oy, Math.cos(a) * speed, Math.sin(a) * speed));
+    }
+  }
+
   updateClient(dt, game) {
     // vaga sem rumo, como os requisitos
     this.atkTimer2 -= dt;
@@ -493,16 +527,20 @@ class Boss {
     this.x += (this.moveTarget - this.x) * 2.2 * dt;
 
     // rajadas miradas no jogador; quanto menos HP, mais raiva
+    const rage = 1 - this.hp / this.maxHp;   // 0..1
+    const stage = 3 - this.thresholds.length; // 0..3, sobe a cada mudança de escopo
     this.atkTimer -= dt;
     if (this.atkTimer <= 0) {
-      const rage = 1 - this.hp / this.maxHp; // 0..1
-      this.atkTimer = Math.max(1.0, 2.4 - this.level * 0.07 - rage * 0.9);
-      const count = 1 + Math.floor(rage * 3) + (Math.random() < 0.3 ? 1 : 0);
-      const base = Math.atan2(game.player.y - this.y, game.player.x - this.x);
-      const speed = 200 + rage * 60;
-      for (let i = 0; i < count; i++) {
-        const a = base + (i - (count - 1) / 2) * 0.16;
-        game.enemyBullets.push(new EnemyBullet(this.x, this.y + 30, Math.cos(a) * speed, Math.sin(a) * speed));
+      this.atkTimer = Math.max(0.85, 1.9 - Math.min(this.level, 12) * 0.05 - rage * 0.75);
+      this.fireFan(game, rage, stage);
+      if (stage >= 3) this.volley = 0.25; // último escopo: ele repete a cobrança
+    }
+
+    if (this.volley !== null) {
+      this.volley -= dt;
+      if (this.volley <= 0) {
+        this.volley = null;
+        this.fireFan(game, rage, stage); // mira refeita: desviar uma vez não basta
       }
     }
 
@@ -517,22 +555,56 @@ class Boss {
     }
   }
 
+  // o build cospe erros no log; eles ocupam o espaço pra onde se foge da coluna
+  spawnError(game, x) {
+    let alive = 0;
+    for (const e of game.enemies) if (e.type === "error" && !e.dead) alive++;
+    if (alive >= 5) return;
+    game.enemies.push(new Enemy("error", clamp(x, 65, game.W - 65), this.y + 30, this.level));
+    AudioSys.play("split");
+  }
+
   updateBuild(dt, game) {
     this.x = game.W / 2 + Math.sin(this.t * 0.5) * 150;
+
+    // abertura: o boss levava 4s pra fazer qualquer coisa. as sobras da task contam.
+    if (!this.opened) {
+      this.opened = true;
+      const n = Math.max(0, 3 - game.enemies.length);
+      for (let i = 0; i < n; i++) this.spawnError(game, rand(120, game.W - 120));
+    }
+
     this.atkTimer -= dt;
     if (this.atkTimer <= 0 && !this.telegraph) {
       this.atkTimer = Math.max(1.6, 2.7 - this.level * 0.08);
-      this.telegraph = { x: game.player.x, t: 0.75 };
+      const stage = 3 - this.thresholds.length;
+      const px = game.player.x;
+      // no fim, uma 2ª coluna rumo ao centro: encostar na parede deixa de salvar
+      const x2 = stage >= 3 ? px + (px > game.W / 2 ? -140 : 140) : null;
+      this.telegraph = { x: px, x2, t: 0.75, fired: false };
     }
     if (this.telegraph) {
       this.telegraph.t -= dt;
-      if (this.telegraph.t <= 0) {
-        // despeja a stack trace na coluna marcada
-        for (let i = 0; i < 5; i++) {
-          game.enemyBullets.push(new EnemyBullet(this.telegraph.x, this.y + 30 - i * 34, 0, 340));
+      if (this.telegraph.t <= 0 && !this.telegraph.fired) {
+        this.telegraph.fired = true;
+        // despeja a stack trace na(s) coluna(s) marcada(s)
+        for (const cx of [this.telegraph.x, this.telegraph.x2]) {
+          if (cx === null) continue;
+          for (let i = 0; i < 5; i++) {
+            game.enemyBullets.push(new EnemyBullet(cx, this.y + 30 - i * 34, 0, 340));
+          }
         }
-        this.telegraph = null;
+        this.spawnError(game, this.telegraph.x); // o crash deixa o erro no log
       }
+      if (this.telegraph.t <= -0.3) this.telegraph = null; // cicatriz: some 0.3s depois
+    }
+
+    // a cada 25% de HP perdido o build quebra mais fundo
+    if (this.thresholds.length && this.hp / this.maxHp <= this.thresholds[0]) {
+      this.thresholds.shift();
+      game.buildBreak(this);
+      this.spawnError(game, this.x - 70);
+      this.spawnError(game, this.x + 70);
     }
   }
 
@@ -549,8 +621,18 @@ class Boss {
 
     // telegraph do build: coluna vermelha de aviso
     if (this.telegraph) {
-      ctx.fillStyle = `rgba(224, 82, 82, ${0.1 + Math.sin(this.t * 25) * 0.06})`;
-      ctx.fillRect(this.telegraph.x - 16, y, 32, 600);
+      const tg = this.telegraph;
+      const fade = tg.t > 0 ? 1 : Math.max(0, 1 + tg.t / 0.3);
+      const a = (0.1 + Math.sin(this.t * 25) * 0.06) * fade;
+      for (const cx of [tg.x, tg.x2]) {
+        if (cx === null) continue;
+        // banda: onde o CENTRO do jogador não pode estar (46 do sprite + 10 da bala)
+        ctx.fillStyle = `rgba(224, 82, 82, ${a})`;
+        ctx.fillRect(cx - 28, 0, 56, 600);
+        // núcleo: onde as balas nascem de fato
+        ctx.fillStyle = `rgba(224, 82, 82, ${a * 2.5})`;
+        ctx.fillRect(cx - 5, 0, 10, 600);
+      }
     }
 
     // nave do boss (só o contorno): cúpula de vidro + disco
@@ -701,26 +783,111 @@ class Confetti {
   }
 }
 
+/* Cores por tier de streak: quanto maior a sequência, mais quente o número. */
+const TIER_COLORS = [COLORS.dim, COLORS.orange, COLORS.yellow, "#ffffff"];
+
 class FloatText {
-  constructor(x, y, text, color = COLORS.dim) {
+  constructor(x, y, text, color = COLORS.dim, { size = 12, tier = 0, drift = false, bold = false } = {}) {
     this.x = x; this.y = y;
     this.text = text;
     this.color = color;
+    this.size = size;
+    this.tier = tier;
+    this.bold = bold;
+    // espalha os números empilhados em vez de sobrepor (estilo Vampire Survivors)
+    this.vx = drift ? rand(-26, 26) : 0;
+    this.vy = drift ? rand(-58, -34) : -34;
+    this.gravity = drift ? 44 : 0;
     this.life = 1.1;
+    this.maxLife = 1.1;
     this.dead = false;
   }
   update(dt) {
-    this.y -= 34 * dt;
+    this.vy += this.gravity * dt;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
     this.life -= dt;
     if (this.life <= 0) this.dead = true;
+  }
+  // mola: estoura acima de 1 e assenta — mesma sensação do popIn do CSS
+  scale() {
+    const age = this.maxLife - this.life;
+    const POP = 0.12;
+    if (age >= POP) return 1;
+    const p = age / POP;
+    return 0.4 + 0.85 * p + Math.sin(p * Math.PI) * 0.35;
   }
   draw(ctx) {
     ctx.save();
     ctx.globalAlpha = clamp(this.life, 0, 1);
-    ctx.fillStyle = this.color;
-    ctx.font = "12px monospace";
+    ctx.translate(this.x, this.y);
+    ctx.scale(this.scale(), this.scale());
+    ctx.font = `${this.bold ? "bold " : ""}${this.size}px monospace`;
     ctx.textAlign = "center";
-    ctx.fillText(this.text, this.x, this.y);
+    // contorno para o número ler por cima da nebulosa e das partículas
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,0.75)";
+    ctx.lineJoin = "round";
+    ctx.strokeText(this.text, 0, 0);
+    ctx.fillStyle = this.color;
+    ctx.fillText(this.text, 0, 0);
+    ctx.restore();
+  }
+}
+
+/* Ficha de token: sai do inimigo num arco e voa até o contador do HUD.
+   Puramente decorativa — game.tokens já foi creditado no kill. */
+class TokenChip {
+  constructor(x, y, target, delay = 0) {
+    this.x = x; this.y = y;
+    this.sx = x; this.sy = y; // origem do voo, fixada ao fim do arco
+    this.target = target;
+    const a = rand(0, Math.PI * 2);
+    const s = rand(70, 160);
+    this.vx = Math.cos(a) * s;
+    this.vy = Math.sin(a) * s;
+    this.delay = delay;
+    this.t = 0;
+    this.rot = rand(0, Math.PI * 2);
+    this.spin = rand(-10, 10);
+    this.arrived = false;
+    this.dead = false;
+    this.ARC = 0.12;            // arco livre: espalha antes de voar
+    this.FLY = rand(0.3, 0.42); // duração do voo (varia: pops em rajada, não em bloco)
+  }
+  update(dt) {
+    this.t += dt;
+    this.rot += this.spin * dt;
+    if (this.t < this.delay) return;
+    const age = this.t - this.delay;
+
+    if (age < this.ARC) {
+      this.vy += 220 * dt;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      this.sx = this.x; this.sy = this.y;
+      return;
+    }
+    /* Interpolação de duração fixa em vez de perseguição física: física com
+       arrasto dá velocidade terminal, e uma ficha do canto oposto levava 3,5s —
+       tarde demais pra casar com o contador, que rola em ~0,4s. Assim a chegada
+       é constante (~0,45s) venha ela de onde vier. */
+    const p = clamp((age - this.ARC) / this.FLY, 0, 1);
+    const e = p * p; // ease-in: acelera rumo ao contador
+    this.x = this.sx + (this.target.x - this.sx) * e;
+    this.y = this.sy + (this.target.y - this.sy) * e;
+    if (p >= 1) {
+      this.arrived = true;
+      this.dead = true;
+    }
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.fillStyle = COLORS.orange;
+    ctx.globalAlpha = 0.9;
+    ctx.fillRect(-2.5, -2.5, 5, 5);
     ctx.restore();
   }
 }

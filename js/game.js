@@ -132,6 +132,13 @@
     spawnTimer: 1.2,
     shake: 0,
     dmgFlash: 0,
+    chips: [],          // fichas de token voando pro HUD
+    streak: 0,          // kills encadeados (cosmético — não altera tokens)
+    streakT: 0,         // segundos até a corrente quebrar
+    tokensDisplay: 0,   // valor suavizado do contador
+    tokenPop: 0,        // 0..1, impulso do slam
+    freeze: 0,          // hit-stop, em segundos reais
+    milestone: 0,       // índice do último marco cruzado
     statusTimer: 0,
     statusMsg: STATUS_MSGS[0],
     bannerT: 0,
@@ -152,6 +159,14 @@
     boss.phrase = pick(boss.cfg.phrases);
     game.shake = Math.max(game.shake, 0.35);
     showBanner("🔄 o cliente mudou o escopo!", 2, true);
+    AudioSys.play("scopeChange");
+  };
+
+  game.buildBreak = function (boss) {
+    boss.phraseTimer = 3.4;
+    boss.phrase = pick(boss.cfg.phrases);
+    game.shake = Math.max(game.shake, 0.3);
+    showBanner("⛔ o build quebrou de novo!", 2, true);
     AudioSys.play("scopeChange");
   };
 
@@ -232,7 +247,15 @@
     game.power = { coffee: 0, focus: 0, dnd: 0 };
     game.shake = 0;
     game.dmgFlash = 0;
+    game.chips = [];
+    game.streak = 0;
+    game.streakT = 0;
+    game.tokensDisplay = 0;
+    game.tokenPop = 0;
+    game.freeze = 0;
+    game.milestone = 0;
     game.player = new Player(W, H);
+    measureTokenTarget(); // fontes/layout já assentaram: alvo das fichas confiável
     startTask();
     ui.menu.classList.add("hidden");
     ui.over.classList.add("hidden");
@@ -265,7 +288,9 @@
     const b = game.boss;
     for (let i = 0; i < 25; i++) game.particles.push(new Particle(b.x, b.y, b.cfg.color));
     const gained = 1000 + game.level * 250;
-    game.tokens += gained;
+    gainTokens(gained);
+    spawnChips(b.x, b.y, 10);
+    game.freeze = Math.max(game.freeze, 0.08);
     game.tasksDone++;
     game.level++;
     game.focus = Math.min(game.maxFocus, game.focus + 15); // café da vitória
@@ -277,8 +302,9 @@
       extra += Math.floor(e.cfg.tokens / 2);
       for (let i = 0; i < 6; i++) game.particles.push(new Particle(e.x, e.y, e.cfg.color));
       game.particles.push(new Ring(e.x, e.y, e.cfg.color, 20));
+      spawnChips(e.x, e.y, 2);
     }
-    game.tokens += extra;
+    gainTokens(extra);
     game.enemies = [];
     game.enemyBullets = [];
     game.shake = Math.max(game.shake, 0.4);
@@ -477,6 +503,90 @@
     return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
   }
 
+  // dígitos cheios pro HUD: o contador só "sobe" se os dígitos se mexerem
+  function fmtFull(n) {
+    return n.toLocaleString("pt-BR");
+  }
+
+  /* ── juice do contador de tokens ── */
+
+  const MILESTONES = [1000, 2500, 5000, 10000, 25000, 50000];
+
+  /* O HUD é DOM acima de um canvas escalado por CSS, então o contador vira uma
+     coordenada de canvas com y negativo — as fichas saem pelo topo até ele.
+     Mutado no lugar (nunca substituído): as fichas em voo seguram a referência,
+     então um resize reaponta todas. getBoundingClientRect força layout: cacheie. */
+  const tokenTarget = { x: 60, y: -20 };
+  function measureTokenTarget() {
+    const c = canvas.getBoundingClientRect();
+    const t = ui.tokens.getBoundingClientRect();
+    if (!c.width) return; // ainda não renderizou
+    const s = W / c.width; // px de canvas por px de CSS
+    tokenTarget.x = (t.left + t.width / 2 - c.left) * s;
+    tokenTarget.y = (t.top + t.height / 2 - c.top) * s;
+  }
+  measureTokenTarget();
+  window.addEventListener("resize", measureTokenTarget);
+
+  /* Limiares medidos, não chutados: inimigos nascem a cada ~1–1,8s, então
+     tier a cada 4 kills deixava tier 2 e 3 inalcançáveis (0% numa partida
+     inteira). 3/6/10 com janela de 2,5s torna tier 1 comum, tier 2 uma boa
+     sequência e tier 3 um momento raro de tela cheia. */
+  const STREAK_WINDOW = 2.5;
+  function tierOf(streak) {
+    return streak >= 10 ? 3 : streak >= 6 ? 2 : streak >= 3 ? 1 : 0;
+  }
+
+  // Crédito imediato: game.tokens é a fonte da verdade (hiscore/stats sempre
+  // corretos). As fichas são decorativas — só empurram o pop na chegada.
+  function gainTokens(n) {
+    game.tokens += n;
+    while (
+      game.milestone < MILESTONES.length &&
+      game.tokens >= MILESTONES[game.milestone]
+    ) {
+      const mark = MILESTONES[game.milestone];
+      game.milestone++;
+      showBanner(`✳ ${fmtFull(mark)} tokens processados`, 2);
+      for (let i = 0; i < 40; i++) {
+        game.particles.push(new Confetti(rand(W * 0.2, W * 0.8), H * 0.45));
+      }
+      game.tokenPop = 1;
+      game.shake = Math.max(game.shake, 0.35);
+      game.freeze = Math.max(game.freeze, 0.06);
+      AudioSys.play("fanfare");
+    }
+  }
+
+  function spawnChips(x, y, count) {
+    for (let i = 0; i < count; i++) {
+      game.chips.push(new TokenChip(x, y, tokenTarget, i * 0.04));
+    }
+  }
+
+  /* Fichas voam em QUALQUER modo, com dt real. Se andassem só em "play", as 10
+     do bossDefeated congelariam no ar durante toda a vitória (o modo troca no
+     mesmo frame em que elas nascem) — e pra sempre no game over. */
+  let chipSfxCd = 0;
+  function updateChips(dt) {
+    chipSfxCd -= dt;
+    for (const c of game.chips) {
+      c.update(dt);
+      if (c.arrived) {
+        /* Impulso alto + decaimento rápido: as fichas chegam espaçadas ~50ms,
+           então cada uma re-chuta o contador (flutter) em vez de somar num
+           slam só. Uma ficha já é visível; a rajada da streak satura. */
+        game.tokenPop = Math.min(1, game.tokenPop + 0.45);
+        // as fichas chegam em rajada — sem trava viram papa sonora
+        if (chipSfxCd <= 0) {
+          AudioSys.play("chip");
+          chipSfxCd = 0.05;
+        }
+      }
+    }
+    game.chips = game.chips.filter((o) => !o.dead);
+  }
+
   /* ── dano no foco do Claude ── */
 
   function hitFocus(dmg) {
@@ -537,17 +647,45 @@
   function killEnemy(e, byShield = false) {
     e.dead = true;
     const gained = byShield ? Math.floor(e.cfg.tokens / 2) : e.cfg.tokens;
-    game.tokens += gained;
-    for (let i = 0; i < (e.mini ? 5 : 10); i++) {
+
+    // corrente de kills: cosmética, não mexe em quantos tokens caem
+    const prevTier = tierOf(game.streak);
+    game.streak++;
+    game.streakT = STREAK_WINDOW;
+    const tier = tierOf(game.streak);
+
+    gainTokens(gained);
+
+    for (let i = 0; i < (e.mini ? 5 : 10) + tier * 3; i++) {
       game.particles.push(new Particle(e.x, e.y, e.cfg.color));
     }
-    game.particles.push(new Ring(e.x, e.y, e.cfg.color, e.mini ? 18 : 30));
-    if (Math.random() < 0.3) {
-      game.floats.push(new FloatText(e.x, e.y - 10, pick(KILL_QUIPS), COLORS.orange));
-    } else {
-      game.floats.push(new FloatText(e.x, e.y - 10, `+${gained}`, COLORS.dim));
+    game.particles.push(new Ring(e.x, e.y, e.cfg.color, (e.mini ? 18 : 30) + tier * 6));
+
+    // o +N aparece SEMPRE — é o número mais importante da tela
+    game.floats.push(
+      new FloatText(e.x, e.y - 10, `+${gained}`, TIER_COLORS[tier], {
+        size: 13 + tier * 4 + (gained >= 300 ? 2 : 0),
+        tier,
+        bold: tier > 0,
+        drift: true,
+      })
+    );
+    // a piada continua, mas ao lado do número, nunca no lugar dele
+    if (Math.random() < 0.2) {
+      game.floats.push(
+        new FloatText(e.x, e.y + 8, pick(KILL_QUIPS), COLORS.dim, { size: 10 })
+      );
     }
+
+    spawnChips(e.x, e.y, e.mini ? 2 : 3 + tier);
+    game.shake = Math.max(game.shake, 0.08 + tier * 0.05);
     AudioSys.play("explode");
+    AudioSys.play("token", { step: game.streak - 1 });
+
+    // hit-stop só nos kills grandes: pontua sem virar travamento
+    if (gained >= 300 || tier > prevTier) {
+      game.freeze = Math.max(game.freeze, 0.05);
+    }
 
     // "quick question" se divide: only takes 5 min… (backlog limpo previne)
     if (e.cfg.splits && !e.mini && !byShield && !game.upgrades.backlog) {
@@ -716,6 +854,12 @@
     game.shake = Math.max(0, game.shake - dt * 1.6);
     game.dmgFlash = Math.max(0, game.dmgFlash - dt);
 
+    // a corrente quebra se você parar de acertar
+    if (game.streakT > 0) {
+      game.streakT -= dt;
+      if (game.streakT <= 0) game.streak = 0;
+    }
+
     if (game.bannerT > 0) {
       game.bannerT -= dt;
       if (game.bannerT <= 0) ui.banner.classList.remove("show");
@@ -877,6 +1021,7 @@
       }
     }
     for (const pt of game.particles) pt.draw(ctx);
+    for (const c of game.chips) c.draw(ctx);
     for (const f of game.floats) f.draw(ctx);
 
     ctx.restore();
@@ -895,8 +1040,28 @@
 
   /* ── HUD (DOM) ── */
 
-  function updateHud(time) {
-    ui.tokens.textContent = fmt(game.tokens);
+  function updateHud(time, dt) {
+    /* O contador vive aqui, não em update(): update() só roda em mode "play",
+       e a animação precisa continuar na vitória e no game over. dt é real. */
+    const diff = game.tokens - game.tokensDisplay;
+    if (Math.abs(diff) < 1) {
+      game.tokensDisplay = game.tokens;
+    } else {
+      /* Aproximação exponencial + piso, pra ganho pequeno também tiquetaquear.
+         Taxa 8 ≈ 0,4s de rolagem, casando com o voo das fichas (~0,45s).
+         O passo é limitado pela distância: sem isso, num frame lento (dt=0,05,
+         o teto do jogo) o piso de 60/s pula o alvo e o contador oscila em volta. */
+      const rate = Math.max(Math.abs(diff) * 8, 60);
+      const step = Math.min(Math.abs(diff), rate * dt);
+      game.tokensDisplay += Math.sign(diff) * step;
+    }
+    game.tokenPop = Math.max(0, game.tokenPop - dt * 6);
+
+    const tier = tierOf(game.streak);
+    ui.tokens.textContent = fmtFull(Math.floor(game.tokensDisplay));
+    ui.tokens.style.transform = `scale(${1 + game.tokenPop * 0.3})`;
+    for (let i = 1; i <= 3; i++) ui.tokens.classList.toggle(`heat${i}`, tier === i);
+
     ui.level.textContent = String(game.level);
 
     if (game.mode === "victory") {
@@ -958,10 +1123,17 @@
     last = now;
     const time = now / 1000;
 
-    if (game.mode === "play") update(dt);
-    else if (game.mode === "victory") victoryUpdate(dt);
+    if (game.mode === "play") {
+      if (game.freeze > 0) {
+        game.freeze = Math.max(0, game.freeze - dt); // dt real, senão nunca acaba
+        update(dt * 0.08);
+      } else {
+        update(dt);
+      }
+    } else if (game.mode === "victory") victoryUpdate(dt);
+    updateChips(dt); // decoração pura: voa em todos os modos, com dt real
     render(dt, time); // fundo continua vivo no menu/pausa (ambiente)
-    updateHud(time);
+    updateHud(time, dt); // dt real: o contador rola até durante o hit-stop
 
     requestAnimationFrame(frame);
   }

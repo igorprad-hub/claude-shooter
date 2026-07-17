@@ -79,6 +79,22 @@ body {
 .hud-left { white-space: nowrap; }
 .hud-left #hud-tokens { color: var(--orange); }
 .hud-left #hud-level { color: var(--text); }
+
+/* O contador é o protagonista: precisa poder escalar e esquentar.
+   inline-block é obrigatório — transform não afeta elemento inline.
+   min-width segura o "· task 1/∞" quando os dígitos crescem. */
+#hud-tokens {
+  display: inline-block;
+  transform-origin: center left; /* cresce pra longe do label "> tokens:" */
+  min-width: 7ch;                /* segura o "· task 1/∞" enquanto os dígitos rolam */
+  margin-right: 8px;             /* folga pro slam não encostar no texto seguinte */
+  font-weight: bold;
+  transition: color 0.2s, text-shadow 0.2s;
+}
+/* precisa de #id pra vencer a especificidade de ".hud-left #hud-tokens" */
+#hud-tokens.heat1 { color: var(--orange); text-shadow: 0 0 6px rgba(217, 119, 87, 0.7); }
+#hud-tokens.heat2 { color: var(--yellow); text-shadow: 0 0 9px rgba(224, 178, 82, 0.8); }
+#hud-tokens.heat3 { color: #fff; text-shadow: 0 0 14px rgba(255, 255, 255, 0.9); }
 .prompt { color: var(--orange); }
 .hud-sep { margin: 0 6px; opacity: 0.5; }
 .hud-center { flex: 1; min-width: 0; }

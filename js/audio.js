@@ -6,6 +6,8 @@ const AudioSys = (() => {
   let ctx = null;
   let muted = false;
 
+  const TOKEN_STEP_MAX = 14; // ~3 oitavas: acima disso vira estridente
+
   function ensure() {
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -61,14 +63,26 @@ const AudioSys = (() => {
     bossDown()    { noise(0.5, 0.16); [420, 300, 210, 120].forEach((f, i) => tone(f, 0.18, { type: "sawtooth", vol: 0.09, delay: i * 0.1 })); },
     scopeChange() { tone(700, 0.3, { type: "sawtooth", vol: 0.1, slideTo: 180 }); },
     gameover()    { [392, 330, 262, 196].forEach((f, i) => tone(f, 0.26, { type: "triangle", vol: 0.12, delay: i * 0.22 })); },
+
+    /* Escada pentatônica maior: cada kill encadeado sobe um degrau.
+       Pentatônica nunca desafina, então qualquer streak soa musical. */
+    token({ step = 0 } = {}) {
+      const scale = [261.63, 293.66, 329.63, 392.0, 440.0]; // C D E G A
+      const s = Math.min(step, TOKEN_STEP_MAX);
+      const f = scale[s % 5] * Math.pow(2, Math.floor(s / 5));
+      tone(f, 0.07, { type: "triangle", vol: 0.07 });
+      tone(f * 2, 0.05, { type: "square", vol: 0.025 });
+    },
+    // chegada do chip no contador
+    chip()        { tone(1320, 0.04, { type: "square", vol: 0.03, slideTo: 1760 }); },
   };
 
   return {
     unlock: ensure,
-    play(name) {
+    play(name, opts) {
       if (muted || !ensure()) return;
       const fn = sfx[name];
-      if (fn) fn();
+      if (fn) fn(opts);
     },
     toggleMute() {
       muted = !muted;

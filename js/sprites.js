@@ -127,6 +127,20 @@ const SPRITE_ROWS = {
     ".YYYYYYYY.",
   ],
 
+  // triângulo de alerta do TypeError que o build cospe
+  error: [
+    "....RR....",
+    "...RrrR...",
+    "...RrrR...",
+    "..RrWWrR..",
+    "..RrWWrR..",
+    ".RrrWWrrR.",
+    ".RrrWWrrR.",
+    "RrrrrrrrrR",
+    "RrrrWWrrrR",
+    "RRRRRRRRRR",
+  ],
+
   // setas circulares do scope changed
   scope: [
     "...CCCCC...",
@@ -259,6 +273,7 @@ const SPRITES = {
   quickMini: makeSprite(SPRITE_ROWS.quick, 2),
   feedback: makeSprite(SPRITE_ROWS.feedback, 2),
   scope: makeSprite(SPRITE_ROWS.scope, 2),
+  error: makeSprite(SPRITE_ROWS.error, 2),
   coffee: makeSprite(SPRITE_ROWS.coffee, 2),
   focus: makeSprite(SPRITE_ROWS.focus, 2),
   dnd: makeSprite(SPRITE_ROWS.dnd, 2),
